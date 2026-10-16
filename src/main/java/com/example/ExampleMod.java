@@ -1,30 +1,69 @@
 package com.example;
 
-import net.fabricmc.api.ModInitializer;
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.world.World;
 
-import net.minecraft.resources.Identifier;
+public class ExampleMod implements DedicatedServerModInitializer {
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+    private static boolean netherEnabled = false;
+    private static boolean endEnabled = false;
 
-public class ExampleMod implements ModInitializer {
-	public static final String MOD_ID = "modid";
+    @Override
+    public void onInitializeServer() {
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            registerCommands(dispatcher);
+        });
 
-	// This logger is used to write text to the console and the log file.
-	// It is considered best practice to use your mod id as the logger's name.
-	// That way, it's clear which mod wrote info, warnings, and errors.
-	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+        ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
+            if (destination.getRegistryKey() == World.NETHER && !netherEnabled) {
+                ServerWorld overworld = player.getServer().getWorld(World.OVERWORLD);
+                if (overworld != null) {
+                    player.teleport(overworld, 0.5, 100.0, 0.5, player.getYaw(), player.getPitch());
+                    player.sendMessage(Text.literal("§cDer Nether ist aktuell gesperrt!"), false);
+                }
+            }
 
-	@Override
-	public void onInitialize() {
-		// This code runs as soon as Minecraft is in a mod-load-ready state.
-		// However, some things (like resources) may still be uninitialized.
-		// Proceed with mild caution.
+            if (destination.getRegistryKey() == World.END && !endEnabled) {
+                ServerWorld overworld = player.getServer().getWorld(World.OVERWORLD);
+                if (overworld != null) {
+                    player.teleport(overworld, 0.5, 100.0, 0.5, player.getYaw(), player.getPitch());
+                    player.sendMessage(Text.literal("§cDas End ist aktuell gesperrt!"), false);
+                }
+            }
+        });
+    }
 
-		LOGGER.info("Hello Fabric world!");
-	}
-
-	public static Identifier id(String path) {
-		return Identifier.fromNamespaceAndPath(MOD_ID, path);
-	}
+    private void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
+        dispatcher.register(CommandManager.literal("dimension")
+            .requires(source -> source.hasPermissionLevel(2))
+            .then(CommandManager.literal("nether")
+                .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                    .executes(context -> {
+                        netherEnabled = BoolArgumentType.getBool(context, "enabled");
+                        String status = netherEnabled ? "§afreigegeben" : "§cgesperrt";
+                        context.getSource().sendFeedback(() -> Text.literal("Der Nether wurde " + status + "!"), true);
+                        return 1;
+                    })
+                )
+            )
+            .then(CommandManager.literal("end")
+                .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                    .executes(context -> {
+                        endEnabled = BoolArgumentType.getBool(context, "enabled");
+                        String status = endEnabled ? "§afreigegeben" : "§cgesperrt";
+                        context.getSource().sendFeedback(() -> Text.literal("Das End wurde " + status + "!"), true);
+                        return 1;
+                    })
+                )
+            )
+        );
+    }
 }
